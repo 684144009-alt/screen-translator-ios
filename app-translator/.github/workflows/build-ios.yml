@@ -1,0 +1,59 @@
+name: Build iOS IPA (Free & Unsigned)
+
+# กำหนดให้เรากดปุ่มสั่ง Build เองได้จากหน้าเว็บ
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-latest # ใช้เครื่อง Mac รุ่นล่าสุดของ GitHub ฟรี
+    defaults:
+      run:
+        working-directory: ./app-translator # ชี้ไปที่โฟลเดอร์แอปของเรา
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 📦 Install dependencies
+        run: npm install
+
+      - name: 🏗️ Generate iOS Native Code (Expo Prebuild)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: 🍎 Install CocoaPods (iOS Dependencies)
+        run: |
+          cd ios
+          pod install
+
+      - name: 🔨 Build iOS App (Unsigned)
+        run: |
+          cd ios
+          # ค้นหาชื่อ Workspace และ Scheme อัตโนมัติ
+          WORKSPACE=$(ls | grep .xcworkspace | head -1)
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.project.schemes[0]')
+          
+          # สั่ง Build โดยปิดระบบตรวจจับลายเซ็นของ Apple
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO -derivedDataPath build
+
+      - name: 🗜️ Package into .ipa file
+        run: |
+          cd ios/build/Build/Products/Release-iphoneos
+          mkdir Payload
+          # ค้นหาไฟล์ .app และจับใส่โฟลเดอร์ Payload เพื่อบีบอัดเป็น .ipa
+          APP_NAME=$(ls | grep .app | head -1)
+          mv "$APP_NAME" Payload/
+          zip -r screen-translator.ipa Payload
+
+      - name: 📤 Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-translator-ipa
+          path: app-translator/ios/build/Build/Products/Release-iphoneos/screen-translator.ipa
+          retention-days: 3 # เก็บไฟล์ไว้ให้โหลด 3 วัน
