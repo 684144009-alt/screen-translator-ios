@@ -1,0 +1,53 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ./app-translator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate iOS Code
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+
+      - name: Build Unsigned iOS App
+        run: |
+          cd ios
+          WORKSPACE=$(ls | grep .xcworkspace | head -1)
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.project.schemes[0]')
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO -derivedDataPath build
+
+      - name: Package IPA
+        run: |
+          cd ios/build/Build/Products/Release-iphoneos
+          mkdir Payload
+          APP_NAME=$(ls | grep .app | head -1)
+          mv "$APP_NAME" Payload/
+          zip -r screen-translator.ipa Payload
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-translator-ipa
+          path: app-translator/ios/build/Build/Products/Release-iphoneos/screen-translator.ipa
